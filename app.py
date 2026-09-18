@@ -1,0 +1,121 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import streamlit as st
+import tempfile
+
+# Streamlit Page Setup
+st.set_page_config(page_title="Planetary Defense Simulation", layout="wide")
+st.title("Planetary Defense: Live Gravity Tractor Deflection Simulation")
+
+# -------------------------------------------------------------
+# 1. SIMULATION PARAMETERS & PHYSICS SETUP
+# -------------------------------------------------------------
+G = 6.67430e-11          # Universal Gravitational Constant
+DAY = 86400              # Seconds in a day
+YEAR = 365 * DAY         # Seconds in a year
+
+# Celestial & Spacecraft Constants
+M_earth = 5.972e24       # Mass of Earth (kg)
+R_earth = 6.371e6        # Radius of Earth (m)
+M_asteroid = 3.0e9       # Mass of asteroid (kg)
+M_tractor = 150000       # Mass of a heavy tractor spacecraft (kg)
+hover_distance = 150     # Distance from tractor to asteroid center (m)
+
+# Simulation Timing
+dt = 4 * DAY             
+total_time = 15 * YEAR   
+steps = int(total_time / dt)
+frame_skip = 4           
+
+initial_distance = 1.5e11 
+initial_speed = -25000    
+
+def run_simulation(use_tractor=False):
+    pos_ast = np.array([initial_distance, 0.0])
+    vel_ast = np.array([initial_speed, 0.0])
+    history_x, history_y = [], []
+    
+    for _ in range(steps):
+        r_earth_vec = -pos_ast
+        r_earth_dist = np.linalg.norm(r_earth_vec)
+        
+        if r_earth_dist <= R_earth: 
+            break
+            
+        history_x.append(pos_ast[0])
+        history_y.append(pos_ast[1])
+        
+        # Earth's gravity pull
+        f_earth = G * M_earth * M_asteroid / (r_earth_dist**2)
+        acc_earth = f_earth * (r_earth_vec / r_earth_dist) / M_asteroid
+        
+        # Tractor gravitational tug
+        acc_tractor = np.zeros(2)
+        if use_tractor:
+            tractor_dir = np.array([0.0, 1.0]) 
+            f_tractor = G * M_tractor * M_asteroid / (hover_distance**2)
+            acc_tractor = f_tractor * tractor_dir / M_asteroid
+            
+        vel_ast += (acc_earth + acc_tractor) * dt
+        pos_ast += vel_ast * dt
+        
+    return np.array(history_x), np.array(history_y)
+
+# Run physics engine
+x_no_tug, y_no_tug = run_simulation(use_tractor=False)
+x_tug, y_tug = run_simulation(use_tractor=True)
+
+num_frames = min(len(x_no_tug), len(x_tug)) // frame_skip
+
+# -------------------------------------------------------------
+# 2. ANIMATION SETUP
+# -------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(10, 6))
+
+earth_circle = plt.Circle((0, 0), R_earth * 5, color='#2b5c8f', alpha=0.4, label='Earth (Visual Scale x5)')
+ax.add_patch(earth_circle)
+ax.plot(0, 0, 'go', markersize=10, label='Earth Center')
+
+line_no_tug, = ax.plot([], [], 'r:', alpha=0.5, label='Undeflected Path')
+line_tug, = ax.plot([], [], 'g-', alpha=0.6, linewidth=1.5, label='Deflected Path')
+ast_no_tug, = ax.plot([], [], 'ro', markersize=6, label='Asteroid (No Intervention)')
+ast_tug, = ax.plot([], [], 'go', markersize=8, label='Asteroid (Tractor Active)')
+
+time_text = ax.text(0.02, 0.93, '', transform=ax.transAxes, color='black', weight='bold')
+status_text = ax.text(0.02, 0.86, '', transform=ax.transAxes, color='darkgreen')
+
+ax.set_title("Live Gravity Tractor Deflection Simulation", fontsize=12, fontweight='bold')
+ax.set_xlabel("X Distance from Earth Center (Meters)", fontsize=10)
+ax.set_ylabel("Y Offset / Deflection Distance (Meters)", fontsize=10)
+ax.set_xlim(-4e7, 1.8e8)
+ax.set_ylim(-2e7, 6e7)
+ax.grid(True, linestyle=':', alpha=0.6)
+ax.legend(loc='upper right', framealpha=0.9)
+
+def update(frame):
+    idx = frame * frame_skip
+    current_days = (idx * dt) / DAY
+    years = current_days / 365
+    
+    line_no_tug.set_data(x_no_tug[:idx], y_no_tug[:idx])
+    line_tug.set_data(x_tug[:idx], y_tug[:idx])
+    
+    ast_no_tug.set_data([x_no_tug[idx]], [y_no_tug[idx]])
+    ast_tug.set_data([x_tug[idx]], [y_tug[idx]])
+    
+    current_deflection_km = y_tug[idx] / 1000
+    time_text.set_text(f"Simulation Time: {years:.2f} Years Passed")
+    status_text.set_text(f"Sideways Deflection: {current_deflection_km:,.1f} km")
+    
+    return line_no_tug, line_tug, ast_no_tug, ast_tug, time_text, status_text
+
+ani = animation.FuncAnimation(fig, update, frames=num_frames, interval=25, blit=True, repeat=False)
+
+# -------------------------------------------------------------
+# 3. RENDER ANIMATION IN STREAMLIT
+# -------------------------------------------------------------
+with st.spinner("Generating physics simulation video..."):
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmpfile:
+        ani.save(tmpfile.name, writer="ffmpeg", fps=30)
+        st.video(tmpfile.name)

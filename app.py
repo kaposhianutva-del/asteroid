@@ -112,10 +112,15 @@ def update(frame):
 
 ani = animation.FuncAnimation(fig, update, frames=num_frames, interval=25, blit=True, repeat=False)
 
+import streamlit.components.v1 as components
+
 # -------------------------------------------------------------
-# 3. RENDER ANIMATION IN STREAMLIT
+# 3. RENDER ANIMATION NATIVELY IN STREAMLIT
 # -------------------------------------------------------------
-with st.spinner("Generating physics simulation video..."):
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmpfile:
-        ani.save(tmpfile.name, writer="ffmpeg", fps=30)
-        st.video(tmpfile.name)
+st.write("Rendering orbital trajectories...")
+
+# Convert Matplotlib animation directly into an interactive HTML5 video player
+html_content = ani.to_jshtml()
+
+# Display the player directly in the Streamlit app
+components.html(html_content, height=700, scrolling=True)
